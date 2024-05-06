@@ -5,4 +5,4 @@
 
 ## Score the calibration dataset (included in the package)
 `library(KidsightsPublic);
-fscores(calibdata)`
+fscores(calibdat)`
