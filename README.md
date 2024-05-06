@@ -4,5 +4,5 @@
 `devtools::install_github("marcus-waldman/KidsightsPublic")`
 
 ## Score the calibration dataset (included in the package)
-`library(KidsightsPublic)`
-`\nKidsightsPublic::fscores(KidsightsPublic::calibdata)`
+`library(KidsightsPublic)
+fscores(calibdata)`
