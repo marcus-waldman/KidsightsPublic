@@ -8,20 +8,23 @@
 
 fscores<-function(input, est_hyperpriors = T, plausible_values = 0){
 
-
-  pars_mirt = internals$pars_mirt
+  # Parameters
+  pars_mirt = internals$pars
   if(!est_hyperpriors){pars_mirt$est = F}
+
+  # Offset term
+  delta = internals$delta
 
   fit_kidsights <-
     mirt::mirt(
       data = input |> dplyr::select(starts_with("AA"),starts_with("BB"),starts_with("CC"),starts_with("DD")),
       model = 1,
       covdata = input |> dplyr::select(years),
-      formula = ~ poly(years,4),
+      formula = ~ log(years+delta),
       quadpts = 61*2,
       TOL = 1E-5,
       technical = list(theta_lim = c(-15,10), NCYCLES = 2000),
-      pars = internals$pars
+      pars = pars_mirt
     )
 
   scores<-mirt::fscores(object = fit_kidsights, plausible.draws = plausible_values)
