@@ -4,17 +4,17 @@
 \alias{fscores}
 \title{Score Kidsights}
 \usage{
-fscores(input, est_hyperpriors = T, plausible_values = 0)
+fscores(input, version = "version 2.0", ...)
 }
 \arguments{
 \item{input}{A data.frame with columns years and items in lex_kidsights (prefix = AA,BB,CC, or DD)..}
 
-\item{est_hyperpriors}{Defaults to True. Estimates the hyperpriors meand and variances based on available data.}
+\item{version}{Defaults to the most current version ("version 2.0"). Other options include "version 1.0".}
 
-\item{plausible_values}{Defaults to 0, in which case the EAP estimate is returned.}
+\item{...}{Other arguments passed to mirt::fscores}
 }
 \value{
-A data.frame (or list) of EAP scores (or plausible values).
+A data.frame (or list) of Kidsights scores
 }
 \description{
 Score Kidsights

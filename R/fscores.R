@@ -1,42 +1,43 @@
 #' Score Kidsights
 #'
 #' @param input A data.frame with columns years and items in lex_kidsights (prefix = AA,BB,CC, or DD)..
-#' @param est_hyperpriors Defaults to True. Estimates the hyperpriors meand and variances based on available data.
-#' @param plausible_values Defaults to 0, in which case the EAP estimate is returned.
-#' @return A data.frame (or list) of EAP scores (or plausible values).
+#' @param version  Defaults to the most current version ("version 2.0"). Other options include "version 1.0".
+#' @param ... Other arguments passed to mirt::fscores
+#' @return A data.frame (or list) of Kidsights scores
 #' @export
 
-fscores<-function(input, est_hyperpriors = T, plausible_values = 0){
+fscores<-function(input, version = "version 2.0",...){
 
+  library(tidyverse)
   # Parameters
-  pars_mirt = internals$pars
-  if(!est_hyperpriors){pars_mirt$est = F}
+  pars_mirt = internals[[version]]$pars
 
-  # Offset term
-  delta = internals$delta
+  combined = calibdat %>% dplyr::mutate(wgt = 0) %>% dplyr::bind_rows(input %>% dplyr::mutate(wgt = 1))
 
-  fit_kidsights <-
-    mirt::mirt(
-      data = input |> dplyr::select(starts_with("AA"),starts_with("BB"),starts_with("CC"),starts_with("DD")),
-      model = 1,
-      covdata = input |> dplyr::select(years),
-      formula = ~ log(years+delta),
-      quadpts = 61*2,
-      TOL = 1E-5,
-      technical = list(theta_lim = c(-15,10), NCYCLES = 2000),
-      pars = pars_mirt
-    )
+  # Fit the empirical histogram
+  fit_kidsight = mirt::mirt(
+    data = combined %>% dplyr::select(dplyr::any_of(internals[[version]]$codebook$lex_kidsight %>% na.omit())),
+    model = 1,
+    quadpts = 61*4,
+    technical = list(theta_lim = c(-20,15), NCYCLES = 2000),
+    optimizer = "NR",
+    pars = internals$`version 2.0`$pars,
+    dentype = "EH",
+    TOL = 1E-5,
+    survey.weights = combined$wgt
+  )
 
-  scores<-mirt::fscores(object = fit_kidsights, plausible.draws = plausible_values)
+  scores<-do.call(mirt::fscores,
+                  args = list(
+                    object = fit_kidsight,
+                    use_denstype_estimate = T,
+                    response.pattern =  combined %>% dplyr::filter(wgt==1) %>% dplyr::select(dplyr::any_of(internals[[version]]$codebook$lex_kidsight %>% na.omit())),
+                    theta_lim = c(-20,15),
+                    quadpts = 61*4,
+                    ...)
+                  )
 
-  if(plausible_values==0){
-    output = data.frame(id = input$id, scores = as.vector(scores))
-  } else{
-    output = scores
-  }
-
-  return(output)
-
+  return(scores)
 
 }
 
