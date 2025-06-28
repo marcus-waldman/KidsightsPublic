@@ -4,12 +4,14 @@
 \alias{fscores}
 \title{Score Kidsights}
 \usage{
-fscores(input, version = "version 2.0", ...)
+fscores(input, version = "version 2.0", min.responses = 1, ...)
 }
 \arguments{
 \item{input}{A data.frame with columns years and items in lex_kidsights (prefix = AA,BB,CC, or DD)..}
 
 \item{version}{Defaults to the most current version ("version 2.0"). Other options include "version 1.0".}
+
+\item{min.responses}{Minimum number of responses to items for scoring an individual. Defaults to 5.}
 
 \item{...}{Other arguments passed to mirt::fscores}
 }
