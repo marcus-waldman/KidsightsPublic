@@ -1,26 +1,30 @@
-#' Score Kidsights
+#' obtained early learning scores
 #'
 #' @param input A data.frame with columns years and items in lex_kidsights (prefix = AA,BB,CC, or DD)..
-#' @param version  Defaults to the most current version ("version 2.0"). Other options include "version 1.0".
 #' @param min.responses Minimum number of responses to items for scoring an individual. Defaults to 5.
 #' @param ... Other arguments passed to mirt::fscores
 #' @return A data.frame (or list) of Kidsights scores
 #' @export
 
-fscores<-function(input,  version = "version 2.0", min.responses = 1, ...){
+early_learning<-function(input,  min.responses = 1, ...){
 
   library(tidyverse)
+  library(mirt)
   # Parameters
 
+
   if(! ("id" %in% names(input)) ){stop("id must be a variable in input")}
+  if(min(input$years)<3 | max(input$years>6)){stop("Ages must be between 3 and 6 years old")}
 
   # Clean up the input
-    kidsight_items = internals[[version]]$codebook$lex_kidsight %>% na.omit()
-    # Get rid of observations with less than the minimum number of responses
-    ians = input %>% dplyr::select(dplyr::any_of(kidsight_items)) %>% apply(1,function(x){sum(!is.na(x))})
-    if(sum(ians<min.responses)>0){stop("Some observations have less than the minimum responses.")}
+  ee_items = internals[["version 2.0"]]$codebook %>% dplyr::filter(domain_hrtl == "early_learning") %>% purrr::pluck("lex_kidsight")
 
-  combined = calibdat %>% dplyr::mutate(wgt = 0) %>% dplyr::bind_rows(input %>% dplyr::mutate(wgt = 1))
+  # Get rid of observations with less than the minimum number of responses
+    ians = input %>% dplyr::select(dplyr::any_of(ee_items)) %>% apply(1,function(x){sum(!is.na(x))})
+    if(sum(ians<min.responses)>0){stop("Some observations have less than minimum responses.")}
+    dat = input[ians>=min.responses, ]
+
+  combined = hrtl_early_learning_calibdat %>% dplyr::mutate(wgt = 0) %>% dplyr::bind_rows(dat %>% dplyr::mutate(wgt = 1))
 
   #if(is.null(formula)){
   #  dentype = "EH"
@@ -30,16 +34,16 @@ fscores<-function(input,  version = "version 2.0", min.responses = 1, ...){
     covdata_combined = combined %>% dplyr::select(years,wgt)
 
     vals = mirt::mirt(
-      data = combined %>% dplyr::select(dplyr::any_of(kidsight_items)),
+      data = combined %>% dplyr::select(dplyr::any_of(ee_items)),
       model = 1,
-      formula = ~ 1 + log(years + .1) +  wgt + wgt*years ,
+      formula = ~ wgt*poly(years,2) ,
       covdata = covdata_combined,
       pars = "values",
       dentype = dentype
     )
 
   vals = vals %>%
-      dplyr::left_join(internals[[version]]$pars %>% dplyr::mutate(hat = value) %>% dplyr::select(item,name,hat))
+      dplyr::left_join(hrtl_internals[["2022"]][["Early Learning"]]$pars %>% dplyr::mutate(hat = value) %>% dplyr::select(item,name,hat))
 
    pars = vals %>% dplyr::mutate(
       value = ifelse(!is.na(hat), hat, value),
@@ -51,29 +55,29 @@ fscores<-function(input,  version = "version 2.0", min.responses = 1, ...){
    # Fit the empirical histogram
 
 
-  fit_kidsight = mirt::mirt(
-    data = combined %>% dplyr::select(any_of(kidsight_items)),
+  fit_early_learning = mirt::mirt(
+    data = combined %>% dplyr::select(any_of(ee_items)),
     model = 1,
     quadpts = 61*4,
-    technical = list(theta_lim = c(-20,15), NCYCLES = 2000),
+    technical = list(theta_lim = c(-10,10), NCYCLES = 2000),
     #optimizer = "nloptr",
     #nloptr_args = list(opts = list("algorithm" = "NLOPT_LD_TNEWTON_PRECOND_RESTART")),
     pars = pars,
     dentype = dentype,
     TOL = 1E-3,
-    formula = ~ 1 + log(years + .1) +  wgt + wgt*years ,
+    formula = ~  wgt*poly(years,2),
     covdata = covdata_combined,
-    large = F
+    large = T
   )
 
-  print(tail(mirt::mod2values(fit_kidsight)))
+  print(tail(mirt::mod2values(fit_early_learning)))
 
 
   scores<-do.call(mirt::fscores,
                   args = list(
-                    object = fit_kidsight,
+                    object = fit_early_learning,
                     use_denstype_estimate = T,
-                    theta_lim = c(-20,15),
+                    theta_lim = c(-10,10),
                     quadpts = 61*4,
                     ...)
                   ) %>%

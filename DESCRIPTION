@@ -13,6 +13,7 @@ RoxygenNote: 7.3.2
 Imports: 
     dplyr (>= 1.1.4),
     mirt (>= 1.41), 
+    purrr (>= 1.0.2),
     tidyverse (>= 2.0.0)
 Depends: 
     R (>= 2.10)
