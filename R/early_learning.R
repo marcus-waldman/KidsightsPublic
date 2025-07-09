@@ -36,7 +36,7 @@ early_learning<-function(input,  min.responses = 1, ...){
     vals = mirt::mirt(
       data = combined %>% dplyr::select(dplyr::any_of(ee_items)),
       model = 1,
-      formula = ~ wgt*poly(years,2) ,
+      formula = ~ wgt*years ,
       covdata = covdata_combined,
       pars = "values",
       dentype = dentype
@@ -65,7 +65,7 @@ early_learning<-function(input,  min.responses = 1, ...){
     pars = pars,
     dentype = dentype,
     TOL = 1E-3,
-    formula = ~  wgt*poly(years,2),
+    formula = ~  wgt*years,
     covdata = covdata_combined,
     large = T
   )

@@ -7,7 +7,7 @@
 #' @return A data.frame (or list) of Kidsights scores
 #' @export
 
-fscores<-function(input,  version = "version 2.0", min.responses = 1, ...){
+kidsights_scores<-function(input,  version = "version 2.0", min.responses = 1, ...){
 
   library(tidyverse)
   # Parameters
