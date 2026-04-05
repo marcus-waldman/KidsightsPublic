@@ -213,31 +213,70 @@ scores <- score_kidsights(data)
 scores <- score_kidsights(data, model = "bifactor", min_responses = 5)
 ```
 
-### Phase 5: Validate Against Mplus Scores
+### Phase 5: Test Data Pipeline + Validation
 
-**Ground truth:**
-- `ne25_scores_kidsights_2023_scale.dat` (2,781 records, unidimensional)
-- `ne25_scores_all_2023_scale.dat` (2,785 records, bifactor)
+#### Test Data Preparation
 
-**Validation tests:**
-1. Load NE25 calibration data (same data Mplus used)
-2. Run CmdStan MAP scorer
-3. Compare theta estimates: correlation > 0.999, RMSE < 0.01
-4. Compare CSEMs: correlation > 0.99
-5. Edge cases: children with few responses, extreme ages
+**Source:** NE25 pipeline data from Kidsights-Data-Platform repo.
 
-**Note:** MAP (Stan) vs. EAP/MAP (Mplus MLR) may have small differences due to estimation method. Tolerance should be set empirically.
+**Script:** `data-raw/prepare_test_data.R` — pulls test data from the Platform and formats for package testing:
+
+1. Load `mplus_dat.dat` with column names from `mplus_dat.inp` (2,785 records, 233 columns)
+   - Source: `Kidsights-Data-Platform/calibration/ne25/manual_2023_scale/mplus/`
+   - Columns: rid, pid, recordid, covariates (logyrs, yrs3, ...), 220 item responses (AA4-PS049)
+   - Items already in equate lexicon (AA4, BB5, CC4, etc.)
+   - Missing coded as `.` (Mplus convention) → convert to NA
+
+2. Extract `years_old` from `ne25_transformed` table in DuckDB (or back-compute from `logyrs`)
+   - **Age must be in raw years** — Stan model computes `ln(years_old + 1)` and `years_old` internally
+   - Design matrix: `X = [1, ln(years_old + 1), years_old]` (3 columns)
+
+3. Load Mplus ground truth scores:
+   - `ne25_scores_kidsights_2023_scale.dat` (2,781 records, 237 columns — last 2 are theta + SE)
+   - `ne25_scores_all_2023_scale.dat` (2,785 records, 293 columns — last 14 are 7 thetas + 7 SEs)
+
+4. Save as `data/test_ne25_items.rda`, `data/test_ne25_ages.rda`, `data/test_mplus_scores_unidim.rda`, `data/test_mplus_scores_bifactor.rda`
+
+#### Validation Strategy
+
+**Important:** The Mplus model used **11 covariates** in the latent regression:
+```
+F ON logyrs yrs3 school logfpl phq2 schXyrs3 fplXyrs3 phqXyrs3 black hisp other;
+```
+
+The new CmdStan model uses only **3 basis functions** of age: `[1, ln(years_old + 1), years_old]`.
+
+This means scores will NOT be identical to Mplus — the priors differ. Two-stage validation:
+
+**Stage A: Sanity check (production model)**
+- Run CmdStan with `[1, ln(years_old + 1), years_old]` prior
+- Verify: scores are in reasonable range, correlation with Mplus > 0.95, age-score gradient is positive
+- This is the "does it work" test
+
+**Stage B: Exact equivalence test (diagnostic model)**
+- Temporarily pass all 11 Mplus covariates as the design matrix X
+- Run CmdStan with the same 11-covariate prior
+- Compare: theta correlation > 0.999, RMSE < 0.05
+- MAP (Stan BFGS) vs. EAP (Mplus MLR) will have small expected differences
+- This validates that the GRM likelihood + item parameters are correct, independent of prior choice
+
+If Stage B passes but Stage A gives different scores, that's expected — different priors, same likelihood.
 
 ---
 
 ## Implementation Sprints
 
-### Sprint 1: Mplus Parser + Item Parameter Data
-- `R/parse_mplus_out.R` — parser for .out files
-- `data-raw/extract_params.R` — script to create package data
-- `data/item_params.rda` — bundled item parameters
+### Sprint 1: Mplus Parser + Item Parameters + Test Data
+- `R/parse_mplus_out.R` — parser for .out files (slopes, thresholds with sign flip d = -tau)
+- `data-raw/extract_params.R` — script to create item_params from .out files
+- `data-raw/prepare_test_data.R` — pull NE25 test data from Kidsights-Data-Platform
+- `data/item_params.rda` — bundled item parameters (220 items, unidim + bifactor)
 - `data/codebook_lookup.rda` — lexicon lookup table from codebook.json
-- Test: Extracted params match .out file values
+- `data/test_ne25_items.rda` — NE25 item responses (equate lexicon, 2785 records)
+- `data/test_ne25_ages.rda` — NE25 ages in years (raw, not log-transformed)
+- `data/test_mplus_scores_unidim.rda` — Mplus theta + SE ground truth
+- `data/test_mplus_scores_bifactor.rda` — Mplus 7-factor scores ground truth
+- Test: Extracted params match .out file values; test data loads correctly
 
 ### Sprint 2: Stan Models
 - `inst/stan/grm_unidimensional.stan` — single factor GRM with age prior + QR
@@ -273,6 +312,7 @@ scores <- score_kidsights(data, model = "bifactor", min_responses = 5)
 | `todo/scoring_package_plan.md` | 0 | This plan |
 | `R/parse_mplus_out.R` | 1 | Mplus .out parser |
 | `data-raw/extract_params.R` | 1 | Parameter extraction script |
+| `data-raw/prepare_test_data.R` | 1 | Pull NE25 test data from Platform repo |
 | `inst/stan/grm_unidimensional.stan` | 2 | Unidimensional GRM |
 | `inst/stan/grm_bifactor.stan` | 2 | Bifactor GRM |
 | `R/detect_lexicon.R` | 3 | Auto-lexicon detection |
@@ -301,11 +341,14 @@ scores <- score_kidsights(data, model = "bifactor", min_responses = 5)
 
 ## Verification
 
-- **Sprint 1:** Extracted params match manual spot-check of .out files
+- **Sprint 1:** Extracted params match manual spot-check of .out files; test data loads; ages in years (not log)
 - **Sprint 2:** Stan models compile and optimize on 100-person synthetic data
-- **Sprint 3:** Scores produced for NE25 data, reasonable range
-- **Sprint 4:** Theta correlation > 0.999 vs Mplus scores on same NE25 data
+- **Sprint 3:** Scores produced for NE25 test data, reasonable range
+- **Sprint 4 Stage A:** Production model `[1, ln(age+1), age]` — correlation > 0.95 with Mplus, age gradient positive
+- **Sprint 4 Stage B:** Diagnostic model (11 Mplus covariates) — correlation > 0.999, RMSE < 0.05
 - **Sprint 5:** `R CMD check` passes, package installs cleanly
+
+**Note on age:** All age values are in **raw years** (e.g., 2.5 = 2 years 6 months). The Stan model computes `ln(years_old + 1)` internally. R prep functions should NOT pre-transform age.
 
 ## Risk Register
 
