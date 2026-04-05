@@ -248,19 +248,13 @@ The new CmdStan model uses only **3 basis functions** of age: `[1, ln(years_old 
 
 This means scores will NOT be identical to Mplus — the priors differ. Two-stage validation:
 
-**Stage A: Sanity check (production model)**
-- Run CmdStan with `[1, ln(years_old + 1), years_old]` prior
-- Verify: scores are in reasonable range, correlation with Mplus > 0.95, age-score gradient is positive
-- This is the "does it work" test
-
-**Stage B: Exact equivalence test (diagnostic model)**
-- Temporarily pass all 11 Mplus covariates as the design matrix X
-- Run CmdStan with the same 11-covariate prior
-- Compare: theta correlation > 0.999, RMSE < 0.05
-- MAP (Stan BFGS) vs. EAP (Mplus MLR) will have small expected differences
-- This validates that the GRM likelihood + item parameters are correct, independent of prior choice
-
-If Stage B passes but Stage A gives different scores, that's expected — different priors, same likelihood.
+**Validation: Approximate match against Mplus**
+- Run CmdStan with production prior `[1, ln(years_old + 1), years_old]`
+- Compare theta estimates against Mplus scores (which used 11 covariates including FPL, PHQ2, race)
+- Expected: correlation > 0.98 (likelihood dominates prior for most children)
+- Scores will diverge more for children with few item responses (prior matters more)
+- Verify: age-score gradient is positive, scores are in reasonable range, CSEMs are plausible
+- This is NOT an exact replication — different priors, same GRM likelihood + item parameters
 
 ---
 
@@ -344,8 +338,7 @@ If Stage B passes but Stage A gives different scores, that's expected — differ
 - **Sprint 1:** Extracted params match manual spot-check of .out files; test data loads; ages in years (not log)
 - **Sprint 2:** Stan models compile and optimize on 100-person synthetic data
 - **Sprint 3:** Scores produced for NE25 test data, reasonable range
-- **Sprint 4 Stage A:** Production model `[1, ln(age+1), age]` — correlation > 0.95 with Mplus, age gradient positive
-- **Sprint 4 Stage B:** Diagnostic model (11 Mplus covariates) — correlation > 0.999, RMSE < 0.05
+- **Sprint 4:** Production model `[1, ln(age+1), age]` — correlation > 0.98 with Mplus, age gradient positive
 - **Sprint 5:** `R CMD check` passes, package installs cleanly
 
 **Note on age:** All age values are in **raw years** (e.g., 2.5 = 2 years 6 months). The Stan model computes `ln(years_old + 1)` internally. R prep functions should NOT pre-transform age.
