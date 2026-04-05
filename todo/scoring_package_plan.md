@@ -95,44 +95,104 @@ Bundle a lookup table that maps column names → canonical item IDs for any lexi
 
 ### Phase 3: Write Stan Models
 
-**`inst/stan/grm_unidimensional.stan`:**
-```
-data {
-  int<lower=1> N;              // persons
-  int<lower=1> J;              // items
-  int<lower=1> max_cat;        // max categories across items
-  array[J] int<lower=2> n_cat; // categories per item
-  array[N, J] int y;           // responses (-1 = missing)
-  vector[J] a;                 // fixed slopes
-  matrix[J, max_cat-1] d;      // fixed thresholds (padded)
-  matrix[N, 3] X;              // design matrix [1, ln(age+1), age]
+**Key performance decisions:**
+1. **Missing data via `transformed data` indexing** — precompute observed item indices per person once, avoid branching in likelihood
+2. **Vectorized `ordered_logistic_lpmf`** — push inner item loop into Stan's C++ implementation
+3. **`reduce_sum` parallelism** — parallelize person-level likelihood across CPU threads
+4. **QR decomposition** — reparameterize design matrix for numerical stability
+5. **Threshold sign flip** — Mplus threshold τ converted to Stan intercept d = -τ
+
+**CRITICAL: Mplus parameterizes as `a*theta - tau`. Stan's `ordered_logistic` uses `a*theta + d`. Therefore `d = -tau_mplus` (sign flip on all thresholds when parsing .out files).**
+
+**`inst/stan/grm_unidimensional.stan` (sketch):**
+```stan
+functions {
+  // Per-person log-likelihood (for reduce_sum parallelism)
+  real person_lpdf(array[] int y_slice,
+                   int start, int end,
+                   vector theta, vector a, matrix d,
+                   array[,] int obs_idx, array[] int n_obs,
+                   array[] int n_cat) {
+    real ll = 0;
+    for (i in start:end) {
+      // Vectorized: extract observed items for person i
+      int n = n_obs[i];
+      // Use ordered_logistic_lpmf on observed items only
+      for (k in 1:n) {
+        int j = obs_idx[i, k];
+        // ordered_logistic with cutpoints = -d (Stan convention)
+        ll += ordered_logistic_lpmf(y_slice[i - start + 1, k] |
+                                     a[j] * theta[i],
+                                     segment(d[j], 1, n_cat[j] - 1));
+      }
+    }
+    return ll;
+  }
 }
+
+data {
+  int<lower=1> N;                    // persons
+  int<lower=1> J;                    // items
+  int<lower=1> max_cat;              // max categories across items
+  array[J] int<lower=2> n_cat;      // categories per item
+  array[N, J] int y;                // responses (-1 = missing)
+  vector[J] a;                       // fixed slopes
+  matrix[J, max_cat-1] d;           // fixed thresholds (sign-flipped from Mplus)
+  matrix[N, 3] X;                    // design matrix [1, ln(age+1), age]
+}
+
 transformed data {
-  // QR decomposition of X
+  // QR decomposition of design matrix
   matrix[N, 3] Q_ast = qr_thin_Q(X) * sqrt(N - 1);
   matrix[3, 3] R_ast = qr_thin_R(X) / sqrt(N - 1);
   matrix[3, 3] R_ast_inverse = inverse(R_ast);
-}
-parameters {
-  vector[N] theta;             // person scores
-  vector[3] gamma;             // regression coefficients (QR space)
-}
-model {
-  vector[3] beta = R_ast_inverse * gamma;  // back-transform
-  gamma ~ normal(0, 2.5);
+
+  // Precompute observed item indices per person (FIML)
+  array[N] int n_obs;
+  array[N, J] int obs_idx;
   for (i in 1:N) {
-    theta[i] ~ normal(Q_ast[i] * gamma, 1);
+    n_obs[i] = 0;
     for (j in 1:J) {
-      if (y[i,j] > 0) {  // non-missing
-        // GRM cumulative logit likelihood
+      if (y[i, j] >= 0) {
+        n_obs[i] += 1;
+        obs_idx[i, n_obs[i]] = j;
       }
     }
   }
 }
+
+parameters {
+  vector[N] theta;                   // person MAP scores
+  vector[3] gamma;                   // latent regression (QR space)
+}
+
+model {
+  // Prior on regression coefficients
+  gamma ~ normal(0, 2.5);
+
+  // Age-informed prior on theta: theta_i ~ N(X_i * beta, 1)
+  theta ~ normal(Q_ast * gamma, 1);
+
+  // FIML likelihood: only observed items per person
+  // Use reduce_sum for parallelism across persons
+  target += reduce_sum(person_lpdf, y, 1,
+                       theta, a, d, obs_idx, n_obs, n_cat);
+}
+
+generated quantities {
+  // Back-transform regression coefficients
+  vector[3] beta = R_ast_inverse * gamma;
+}
 ```
 
 **`inst/stan/grm_bifactor.stan`:**
-Same structure but with `K=7` factors, `matrix[N,K] theta`, `matrix[3,K] gamma`, and factor loading indicators.
+Same structure extended to K=7 factors:
+- `matrix[N, K] theta` (7 scores per person)
+- `matrix[3, K] gamma` (regression coefficients per factor, QR space)
+- `matrix[J, K] lambda` (0/1 factor loading pattern: which items load on which factors)
+- Item likelihood: `sum_k(a[j] * lambda[j,k] * theta[i,k]) + d[j,c]`
+- Each factor gets own age-informed prior: `theta[i,k] ~ N(Q_ast[i] * gamma[,k], 1)`
+- `reduce_sum` parallelizes across persons (each person's 7D theta is independent given beta)
 
 ### Phase 4: Build R Functions
 
