@@ -12,8 +12,10 @@ test_that("detect_lexicon is case-insensitive", {
 })
 
 test_that("detect_lexicon identifies ne25 lexicon", {
-  df <- data.frame(C020 = c(0, 1), C023 = c(1, 0), C026 = c(0, 1),
-                   C033 = c(1, 1), C038 = c(0, 0))
+  df <- data.frame(
+    C020 = c(0, 1), C023 = c(1, 0), C026 = c(0, 1),
+    C033 = c(1, 1), C038 = c(0, 0)
+  )
   result <- detect_lexicon(df, min_overlap = 0)
   expect_equal(result$lexicon, "ne25")
   expect_true("AA4" %in% result$mapping)

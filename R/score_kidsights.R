@@ -65,8 +65,10 @@ score_kidsights <- function(data, id_cols, min_responses = 5, ...) {
   max_cat <- max(n_cat_vec)
   j_items <- length(used_items)
 
-  d_matrix <- build_threshold_matrix(item_params$thresholds, used_items,
-                                     n_cat_vec, max_cat)
+  d_matrix <- build_threshold_matrix(
+    item_params$thresholds, used_items,
+    n_cat_vec, max_cat
+  )
 
   stan_data <- list(
     N = nrow(y_stan),
@@ -80,7 +82,8 @@ score_kidsights <- function(data, id_cols, min_responses = 5, ...) {
   )
 
   stan_file <- system.file("stan", "grm_unidimensional.stan",
-                           package = "KidsightsPublic")
+    package = "KidsightsPublic"
+  )
   mod <- cmdstanr::cmdstan_model(stan_file)
 
   fit <- mod$optimize(

@@ -44,8 +44,10 @@ prepare_response_matrix <- function(items_df, item_names, n_cat) {
     col_vals <- col_vals[!is.na(col_vals)]
     if (length(col_vals) == 0) next
     if (max(col_vals) > n_cat[j]) {
-      stop(sprintf("Item %s: max response %d exceeds n_cat %d",
-                   item_names[j], max(col_vals), n_cat[j]))
+      stop(sprintf(
+        "Item %s: max response %d exceeds n_cat %d",
+        item_names[j], max(col_vals), n_cat[j]
+      ))
     }
   }
   # NA -> 0 (missing indicator for Stan)
@@ -166,12 +168,16 @@ our_f_scores <- theta_f$estimate
 mplus_f_scores <- validation_mplus_scores_bifactor$F
 
 cat("\n=== VALIDATION: F SCORES ===\n")
-cat("Our scores: N =", length(our_f_scores),
-    "range [", round(min(our_f_scores), 3), ",",
-    round(max(our_f_scores), 3), "]\n")
-cat("Mplus scores: N =", length(mplus_f_scores),
-    "range [", round(min(mplus_f_scores), 3), ",",
-    round(max(mplus_f_scores), 3), "]\n")
+cat(
+  "Our scores: N =", length(our_f_scores),
+  "range [", round(min(our_f_scores), 3), ",",
+  round(max(our_f_scores), 3), "]\n"
+)
+cat(
+  "Mplus scores: N =", length(mplus_f_scores),
+  "range [", round(min(mplus_f_scores), 3), ",",
+  round(max(mplus_f_scores), 3), "]\n"
+)
 
 r_f <- cor(our_f_scores, mplus_f_scores)
 cat("Correlation:", round(r_f, 5), "\n")
@@ -182,8 +188,10 @@ cat("RMSE:", round(rmse_f, 4), "\n")
 
 # Age gradient
 age_cor <- cor(validation_ne25_ages$years_old, our_f_scores)
-cat("Age-score correlation:", round(age_cor, 4),
-    "(positive =", age_cor > 0, ")\n")
+cat(
+  "Age-score correlation:", round(age_cor, 4),
+  "(positive =", age_cor > 0, ")\n"
+)
 
 # Regression coefficients
 beta_f <- fit_f$summary(variables = "beta")
@@ -301,12 +309,16 @@ our_gen_scores <- theta_gen$estimate
 mplus_gen_scores <- validation_mplus_scores_bifactor$GEN
 
 cat("\n=== VALIDATION: GEN SCORES ===\n")
-cat("Our scores: N =", length(our_gen_scores),
-    "range [", round(min(our_gen_scores), 3), ",",
-    round(max(our_gen_scores), 3), "]\n")
-cat("Mplus scores: N =", length(mplus_gen_scores),
-    "range [", round(min(mplus_gen_scores), 3), ",",
-    round(max(mplus_gen_scores), 3), "]\n")
+cat(
+  "Our scores: N =", length(our_gen_scores),
+  "range [", round(min(our_gen_scores), 3), ",",
+  round(max(our_gen_scores), 3), "]\n"
+)
+cat(
+  "Mplus scores: N =", length(mplus_gen_scores),
+  "range [", round(min(mplus_gen_scores), 3), ",",
+  round(max(mplus_gen_scores), 3), "]\n"
+)
 
 r_gen <- cor(our_gen_scores, mplus_gen_scores)
 cat("Correlation:", round(r_gen, 5), "\n")
@@ -323,10 +335,12 @@ for (k in seq_along(ps_factors)) {
   mplus_sub <- validation_mplus_scores_bifactor[[fac]]
 
   r_sub <- cor(our_sub, mplus_sub)
-  cat(sprintf("  %s: r = %.5f, our range [%.3f, %.3f], Mplus range [%.3f, %.3f]\n",
-              fac, r_sub,
-              min(our_sub), max(our_sub),
-              min(mplus_sub), max(mplus_sub)))
+  cat(sprintf(
+    "  %s: r = %.5f, our range [%.3f, %.3f], Mplus range [%.3f, %.3f]\n",
+    fac, r_sub,
+    min(our_sub), max(our_sub),
+    min(mplus_sub), max(mplus_sub)
+  ))
 }
 
 # --- Final summary ------------------------------------------------------------

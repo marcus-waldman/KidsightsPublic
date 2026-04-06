@@ -25,7 +25,9 @@ find_validation_file <- function(filename) {
     file.path("data-raw", "validation", filename)
   )
   for (p in paths) {
-    if (file.exists(p)) return(p)
+    if (file.exists(p)) {
+      return(p)
+    }
   }
   NULL
 }

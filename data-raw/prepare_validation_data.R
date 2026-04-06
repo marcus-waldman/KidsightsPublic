@@ -52,8 +52,10 @@ validation_ne25_ages <- data.frame(
   rid = dat$rid,
   years_old = exp(dat$logyrs) - 1
 )
-cat("Age range:", round(min(validation_ne25_ages$years_old), 2), "to",
-    round(max(validation_ne25_ages$years_old), 2), "years\n")
+cat(
+  "Age range:", round(min(validation_ne25_ages$years_old), 2), "to",
+  round(max(validation_ne25_ages$years_old), 2), "years\n"
+)
 
 # --- Load Mplus ground truth scores via MplusAutomation -----------------------
 
@@ -67,8 +69,10 @@ theta_cols <- factor_names
 se_cols <- paste0(factor_names, "_SE")
 
 validation_mplus_scores_bifactor <- savedata_all[, c(theta_cols, se_cols)]
-cat("Bifactor scores:", nrow(validation_mplus_scores_bifactor), "rows,",
-    ncol(validation_mplus_scores_bifactor), "cols\n")
+cat(
+  "Bifactor scores:", nrow(validation_mplus_scores_bifactor), "rows,",
+  ncol(validation_mplus_scores_bifactor), "cols\n"
+)
 
 # Kidsights (F only) model
 mod_k <- readModels(file.path(mplus_dir, "kidsights_2023_calibration_ne25.out"))
@@ -76,22 +80,28 @@ savedata_k <- mod_k$savedata
 
 validation_mplus_scores_f <- savedata_k[, c("F", "F_SE")]
 cat("F scores:", nrow(validation_mplus_scores_f), "rows\n")
-cat("  Note: F-only model has", nrow(savedata_k), "rows vs bifactor",
-    nrow(savedata_all), "rows\n")
+cat(
+  "  Note: F-only model has", nrow(savedata_k), "rows vs bifactor",
+  nrow(savedata_all), "rows\n"
+)
 
 # --- Save ---------------------------------------------------------------------
 
 save(validation_ne25_items,
-     file = file.path(output_dir, "validation_ne25_items.rda"),
-     compress = "xz")
+  file = file.path(output_dir, "validation_ne25_items.rda"),
+  compress = "xz"
+)
 save(validation_ne25_ages,
-     file = file.path(output_dir, "validation_ne25_ages.rda"),
-     compress = "xz")
+  file = file.path(output_dir, "validation_ne25_ages.rda"),
+  compress = "xz"
+)
 save(validation_mplus_scores_f,
-     file = file.path(output_dir, "validation_mplus_scores_f.rda"),
-     compress = "xz")
+  file = file.path(output_dir, "validation_mplus_scores_f.rda"),
+  compress = "xz"
+)
 save(validation_mplus_scores_bifactor,
-     file = file.path(output_dir, "validation_mplus_scores_bifactor.rda"),
-     compress = "xz")
+  file = file.path(output_dir, "validation_mplus_scores_bifactor.rda"),
+  compress = "xz"
+)
 
 cat("\nSaved validation data to", output_dir, "\n")

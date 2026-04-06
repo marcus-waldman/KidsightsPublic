@@ -3,3 +3,4 @@
 export(detect_lexicon)
 export(score_kidsights)
 export(score_psychosocial)
+export(simulate_responses)
