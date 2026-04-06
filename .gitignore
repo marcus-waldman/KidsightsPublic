@@ -1,3 +1,5 @@
 .Rproj.user
-
+.claude/
 kmt-forms/
+data-raw/validation/
+inst/stan/*.exe

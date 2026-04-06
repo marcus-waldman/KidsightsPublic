@@ -41,45 +41,81 @@ where `X_i = [1, ln(age_i + 1), age_i]` (intercept + 2 basis functions).
 - **Residual variance fixed at 1** (standard normal)
 - **Betas estimated per dataset** (jointly optimized with all thetas)
 
-### Two Models
+### Factor Structure (single Mplus .out file)
 
-1. **Unidimensional** (Kidsights overall): 1 factor, 220 items, N+3 parameters
-2. **Bifactor** (psychosocial): 7 factors (general + eat/ext/int/sle/soc/gen_ps), 220 items, 7N+21 parameters
+All parameters come from ONE bifactor calibration (`all_2023_calibration_ne25.out`):
+
+| Factor | Label | Items | Description |
+|--------|-------|-------|-------------|
+| F | Kidsights overall | 220 | General developmental factor (all items load on F) |
+| GEN | General psychosocial | 44 | General factor for psychosocial bifactor |
+| EAT | Eating problems | 4 | Subfactor |
+| EXT | Externalizing | 22 | Subfactor |
+| INT | Internalizing | 9 | Subfactor |
+| SLE | Sleep | 5 | Subfactor |
+| SOC | Social competency | 10 | Subfactor |
+
+**Note:** The 44 PS items load ONLY on their subfactor + GEN (not on F). The 220 non-PS items load only on F.
+
+**IMPORTANT — Case convention:** Mplus uppercases all variable names (e.g., `EG10A`, `CC79Y`). The codebook uses mixed case (e.g., `EG10a`, `CC79y`). Item names in `item_params.rda` are ALL-CAPS (from Mplus). Lexicon detection and column mapping must use **case-insensitive matching**.
+
+**Two scoring modes:**
+1. **Kidsights overall**: F factor only, 220 items, N+3 parameters
+2. **Psychosocial bifactor**: 7 factors (GEN + 6 subfactors), 264 items, 7N+21 parameters
 
 ### Optimization
 
-- **Method:** BFGS via CmdStan `$optimize()`
-- **Output:** MAP theta estimates + Hessian → CSEMs via inverse Fisher information
+- **Method:** L-BFGS via CmdStan `$optimize()` (history_size = 50)
+- **Output:** MAP theta estimates (no Hessian/CSEMs)
 
 ---
 
 ## Data Wrangling Plan
 
-### Phase 1: Extract Item Parameters from Mplus .out Files
+### Phase 1: Extract Item Parameters from Mplus .out Files (via MplusAutomation)
 
-**Source files:**
-- `Kidsights-Data-Platform/calibration/ne25/manual_2023_scale/mplus/kidsights_2023_calibration_ne25.out` (unidimensional)
-- `Kidsights-Data-Platform/calibration/ne25/manual_2023_scale/mplus/all_2023_calibration_ne25.out` (bifactor)
+**Source file:** `Kidsights-Data-Platform/calibration/ne25/manual_2023_scale/mplus/all_2023_calibration_ne25.out`
 
-**Parse and extract:**
-- Item names (220 items)
-- Slopes (a) per item per factor — fixed (@) and freely estimated values
-- Thresholds (d) per item — $1 through $5 (varying by item)
-- Factor loading pattern (which items load on which factors in bifactor model)
-- Number of categories per item (determined by max threshold index)
+Only ONE .out file needed. The `F` factor = Kidsights overall score; the psychosocial subfactors (`GEN`, `EAT`, `EXT`, `INT`, `SLE`, `SOC`) are also in this bifactor model. 44 PS items load ONLY on their subfactor (not on F). 220 items load on F.
 
-**Output format:** R list or data frame stored as package data:
+**Approach:** Use `MplusAutomation::readModels()`. The output `$parameters$unstandardized` has columns: `paramHeader`, `param`, `est`, `se`, `est_se`, `pval`.
+
+**`readModels()` structure (verified):**
+- **Slopes (BY rows):** `paramHeader` = `"F.BY"`, `"EAT.BY"`, etc. `param` = item name, `est` = slope. All `se = 0` (fixed params, coded 999).
+- **Thresholds:** `paramHeader` = `"Thresholds"`, `param` = `"AA4$1"`, `"PS002$2"`, etc. `est` = tau (Mplus convention). **Sign-flip needed: `d = -tau`.**
+- **Factor loading pattern:** 7 unique `*.BY` headers. Items per factor: F=220, GEN=44, EAT=4, EXT=22, INT=9, SLE=5, SOC=10.
+
+**Extraction workflow in `data-raw/extract_params.R`:**
 ```r
-item_params$unidimensional  # slopes + thresholds for 220 items × 1 factor
-item_params$bifactor        # slopes + thresholds for 220 items × 7 factors
+library(MplusAutomation)
+
+mod <- readModels("path/to/all_2023_calibration_ne25.out")
+unstd <- mod$parameters$unstandardized
+
+# Slopes: filter paramHeader ending in ".BY"
+slopes <- unstd[grepl("\\.BY$", unstd$paramHeader), ]
+
+# Thresholds: filter paramHeader == "Thresholds", sign-flip
+thresholds <- unstd[unstd$paramHeader == "Thresholds", ]
+thresholds$est <- -thresholds$est  # d = -tau
 ```
 
-**Item category counts (from Mplus .out):**
-- ~220 items with $1 (all items have at least 1 threshold)
-- ~44 items with $2 (3+ categories)
-- ~42 items with $3 (4+ categories)
-- ~33 items with $4 (5+ categories)
-- ~1 item with $5 (6 categories)
+**Output format:** R list stored as package data:
+```r
+item_params$slopes       # data.frame: item, factor, est (220 F items + 94 subfactor loadings = 314 rows)
+item_params$thresholds   # data.frame: item, threshold_index, est (430 rows, sign-flipped)
+item_params$n_cat        # named vector: items -> number of categories
+item_params$factors      # character vector: c("F", "EAT", "EXT", "INT", "SLE", "SOC", "GEN")
+```
+
+**Item category counts (verified from `readModels()`):**
+- 265 items with $1 (176 binary + 89 with more)
+- 89 items with $2 (3+ categories)
+- 42 items with $3 (4+ categories)
+- 33 items with $4 (5+ categories)
+- 1 item with $5 (6 categories)
+
+**Why MplusAutomation:** Eliminates fragile regex-based parsing; `readModels()` is a mature, well-tested parser for Mplus output files.
 
 ### Phase 2: Build Codebook Lexicon Lookup
 
@@ -197,8 +233,7 @@ Same structure extended to K=7 factors:
 ### Phase 4: Build R Functions
 
 **Core functions:**
-- `parse_mplus_out(filepath)` → Extract item params from .out file
-- `detect_lexicon(data, codebook)` → Auto-detect which lexicon column names match
+- `detect_lexicon(data, codebook)` → Auto-detect which lexicon column names match (case-insensitive)
 - `map_to_canonical(data, lexicon)` → Rename columns to canonical equate IDs
 - `prepare_stan_data(data, item_params, model_type)` → Build Stan data list
 - `score_kidsights(data, model = "unidimensional", ...)` → Main user-facing function
@@ -213,13 +248,23 @@ scores <- score_kidsights(data)
 scores <- score_kidsights(data, model = "bifactor", min_responses = 5)
 ```
 
-### Phase 5: Test Data Pipeline + Validation
+### Phase 5: Data Pipeline + Validation
 
-#### Test Data Preparation
+#### Example Data (ships with package)
 
-**Source:** NE25 pipeline data from Kidsights-Data-Platform repo.
+**Script:** `data-raw/simulate_example_data.R`
 
-**Script:** `data-raw/prepare_test_data.R` — pulls test data from the Platform and formats for package testing:
+Generate simulated GRM responses using the real item parameters:
+- 100-200 simulated persons with ages drawn from realistic distribution (0.5-6 years)
+- Simulate theta from age-informed prior, then generate item responses via GRM probabilities
+- Save as `data/example_items.rda` + `data/example_ages.rda`
+- No real participant data in the installed package
+
+#### Validation Data (development only, `.Rbuildignore`d)
+
+**Script:** `data-raw/prepare_validation_data.R`
+
+Pulls real NE25 data from Kidsights-Data-Platform for validation testing:
 
 1. Load `mplus_dat.dat` with column names from `mplus_dat.inp` (2,785 records, 233 columns)
    - Source: `Kidsights-Data-Platform/calibration/ne25/manual_2023_scale/mplus/`
@@ -235,7 +280,9 @@ scores <- score_kidsights(data, model = "bifactor", min_responses = 5)
    - `ne25_scores_kidsights_2023_scale.dat` (2,781 records, 237 columns — last 2 are theta + SE)
    - `ne25_scores_all_2023_scale.dat` (2,785 records, 293 columns — last 14 are 7 thetas + 7 SEs)
 
-4. Save as `data/test_ne25_items.rda`, `data/test_ne25_ages.rda`, `data/test_mplus_scores_unidim.rda`, `data/test_mplus_scores_bifactor.rda`
+4. Save to `data-raw/validation/` (excluded from package build):
+   - `validation_ne25_items.rda`, `validation_ne25_ages.rda`
+   - `validation_mplus_scores_f.rda`, `validation_mplus_scores_bifactor.rda`
 
 #### Validation Strategy
 
@@ -246,7 +293,7 @@ F ON logyrs yrs3 school logfpl phq2 schXyrs3 fplXyrs3 phqXyrs3 black hisp other;
 
 The new CmdStan model uses only **3 basis functions** of age: `[1, ln(years_old + 1), years_old]`.
 
-This means scores will NOT be identical to Mplus — the priors differ. Two-stage validation:
+This means scores will NOT be identical to Mplus — the priors differ.
 
 **Validation: Approximate match against Mplus**
 - Run CmdStan with production prior `[1, ln(years_old + 1), years_old]`
@@ -260,35 +307,36 @@ This means scores will NOT be identical to Mplus — the priors differ. Two-stag
 
 ## Implementation Sprints
 
-### Sprint 1: Mplus Parser + Item Parameters + Test Data
-- `R/parse_mplus_out.R` — parser for .out files (slopes, thresholds with sign flip d = -tau)
-- `data-raw/extract_params.R` — script to create item_params from .out files
-- `data-raw/prepare_test_data.R` — pull NE25 test data from Kidsights-Data-Platform
-- `data/item_params.rda` — bundled item parameters (220 items, unidim + bifactor)
+### Sprint 1: Item Parameter Extraction (MplusAutomation) + Data Prep
+- `data-raw/extract_params.R` — use `MplusAutomation::readModels()` to extract item_params from .out file (sign flip d = -tau)
+- `data-raw/prepare_codebook_lookup.R` — flatten codebook.json into lexicon lookup table
+- `data-raw/prepare_validation_data.R` — pull full NE25 data + Mplus scores for validation (`.Rbuildignore`d)
+- `data-raw/simulate_example_data.R` — simulate GRM responses for package example data
+- `data/item_params.rda` — bundled item parameters (264 items, 7 factors, slopes + thresholds)
 - `data/codebook_lookup.rda` — lexicon lookup table from codebook.json
-- `data/test_ne25_items.rda` — NE25 item responses (equate lexicon, 2785 records)
-- `data/test_ne25_ages.rda` — NE25 ages in years (raw, not log-transformed)
-- `data/test_mplus_scores_unidim.rda` — Mplus theta + SE ground truth
-- `data/test_mplus_scores_bifactor.rda` — Mplus 7-factor scores ground truth
-- Test: Extracted params match .out file values; test data loads correctly
+- `data/example_items.rda` — simulated item responses (~100-200 records)
+- `data/example_ages.rda` — simulated ages in raw years
+- `data-raw/validation/` — NE25 real data + Mplus ground truth (excluded from package build)
+- Test: Extracted params match .out file values; example data loads correctly
 
-### Sprint 2: Stan Models
-- `inst/stan/grm_unidimensional.stan` — single factor GRM with age prior + QR
-- `inst/stan/grm_bifactor.stan` — 7-factor bifactor GRM with age priors + QR
-- Test: Models compile, optimize on synthetic data
+### Sprint 2: Stan Models + Validation
+- `inst/stan/grm_unidimensional.stan` — F factor, 220 non-PS items, age prior + QR, simple loop (no reduce_sum)
+- `inst/stan/grm_bifactor.stan` — 6 factors (GEN + EAT/EXT/INT/SLE/SOC), 44 PS items, per-factor age priors + QR
+- `data-raw/validate_stan_models.R` — compile models, run on full NE25 data, compare to Mplus scores
+- Validation: correlation > 0.98 with Mplus for F scores; age gradient positive; CSEMs plausible
+- Note: Two separate models — unidimensional uses only the 220 F items, bifactor uses only the 44 PS items
 
 ### Sprint 3: R Scoring Functions
-- `R/detect_lexicon.R` — auto-detection
+- `R/detect_lexicon.R` — auto-detection (case-insensitive)
 - `R/score_kidsights.R` — main scoring function (replaces mirt version)
 - `R/score_psychosocial.R` — bifactor scoring
 - Update DESCRIPTION: remove mirt, add cmdstanr
-- Test: Runs on NE25 data, produces scores
+- Test: Runs on NE25 data, produces scores matching Sprint 2 validation
 
-### Sprint 4: Validation + Testing
-- `tests/testthat/test-score_kidsights.R` — equivalence to Mplus
+### Sprint 4: Testing + Documentation
+- `tests/testthat/test-score_kidsights.R` — scoring correctness
 - `tests/testthat/test-detect_lexicon.R` — lexicon detection
-- `tests/testthat/test-parse_mplus.R` — parser correctness
-- Validation report: correlation, RMSE, scatter plots
+- `tests/testthat/test-item_params.R` — extracted parameter correctness (spot-check against .out)
 - Documentation: vignette with usage examples
 
 ### Sprint 5: Package Polish
@@ -304,11 +352,13 @@ This means scores will NOT be identical to Mplus — the priors differ. Two-stag
 | File | Sprint | Purpose |
 |------|--------|---------|
 | `todo/scoring_package_plan.md` | 0 | This plan |
-| `R/parse_mplus_out.R` | 1 | Mplus .out parser |
-| `data-raw/extract_params.R` | 1 | Parameter extraction script |
-| `data-raw/prepare_test_data.R` | 1 | Pull NE25 test data from Platform repo |
-| `inst/stan/grm_unidimensional.stan` | 2 | Unidimensional GRM |
-| `inst/stan/grm_bifactor.stan` | 2 | Bifactor GRM |
+| `data-raw/extract_params.R` | 1 | Parameter extraction via MplusAutomation::readModels() |
+| `data-raw/prepare_codebook_lookup.R` | 1 | Flatten codebook.json → lexicon lookup table |
+| `data-raw/prepare_validation_data.R` | 1 | Pull full NE25 data + Mplus scores for validation |
+| `data-raw/simulate_example_data.R` | 1 | Simulate GRM example data (ships with package) |
+| `inst/stan/grm_unidimensional.stan` | 2 | F factor, 220 non-PS items |
+| `inst/stan/grm_bifactor.stan` | 2 | 6-factor (GEN + 5 subfactors), 44 PS items |
+| `data-raw/validate_stan_models.R` | 2 | Compile + run on NE25 + compare to Mplus |
 | `R/detect_lexicon.R` | 3 | Auto-lexicon detection |
 | `R/score_kidsights.R` | 3 | Main scoring (replaces mirt version) |
 | `R/score_psychosocial.R` | 3 | Bifactor scoring |
@@ -335,10 +385,10 @@ This means scores will NOT be identical to Mplus — the priors differ. Two-stag
 
 ## Verification
 
-- **Sprint 1:** Extracted params match manual spot-check of .out files; test data loads; ages in years (not log)
-- **Sprint 2:** Stan models compile and optimize on 100-person synthetic data
-- **Sprint 3:** Scores produced for NE25 test data, reasonable range
-- **Sprint 4:** Production model `[1, ln(age+1), age]` — correlation > 0.98 with Mplus, age gradient positive
+- **Sprint 1:** Extracted params match manual spot-check of .out files; example data loads and has plausible responses; validation data loads; ages in years (not log)
+- **Sprint 2:** Stan models compile; full NE25 validation — correlation > 0.98 with Mplus for F scores, age gradient positive, CSEMs plausible
+- **Sprint 3:** R wrapper functions produce same scores as Sprint 2 validation script
+- **Sprint 4:** Test suite passes; documentation complete
 - **Sprint 5:** `R CMD check` passes, package installs cleanly
 
 **Note on age:** All age values are in **raw years** (e.g., 2.5 = 2 years 6 months). The Stan model computes `ln(years_old + 1)` internally. R prep functions should NOT pre-transform age.
@@ -349,6 +399,6 @@ This means scores will NOT be identical to Mplus — the priors differ. Two-stag
 |------|-----------|
 | BFGS convergence issues for large N × 7K | Start with unidimensional, tune initial values from marginal estimates |
 | GRM likelihood gradient complexity | Stan handles autodiff; verify against finite differences |
-| Mplus .out parsing fragile | Multiple test files, structured regex patterns |
+| MplusAutomation edge cases | Verify readModels() output structure on both .out files; add as Suggests (build-time only) |
 | CmdStan installation dependency | Document setup, consider fallback to rstan |
 | MAP ≠ EAP (Mplus uses different estimator) | Set tolerance empirically, document expected differences |

@@ -1,0 +1,119 @@
+---
+title: "Scoring with KidsightsPublic"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Scoring with KidsightsPublic}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  eval = FALSE
+)
+```
+
+## Overview
+
+KidsightsPublic computes developmental screening scores using a Graded Response
+Model (GRM) with item parameters calibrated from a large norming sample. Scores
+are estimated via MAP (maximum a posteriori) optimization using CmdStan.
+
+Two scoring functions are available:
+
+- `score_kidsights()` — a single overall developmental score (F factor)
+- `score_psychosocial()` — six psychosocial domain scores (GEN + EAT, EXT, INT,
+  SLE, SOC)
+
+## Prerequisites
+
+CmdStan must be installed. Install it via:
+
+```{r}
+install.packages("cmdstanr", repos = c("https://stan-dev.r-universe.dev", getOption("repos")))
+cmdstanr::install_cmdstan()
+```
+
+## Preparing your data
+
+Your data frame must include:
+
+1. **Item response columns** — coded 0, 1, ..., K-1 (0-indexed). Column names
+   must follow a recognized lexicon (equate, ne25, credi, gsed, etc.). The
+   package auto-detects which lexicon your data uses.
+2. **`years_old`** — age in years (e.g., 2.5 for 2 years 6 months).
+3. **ID columns** — one or more columns that uniquely identify each observation.
+
+```{r}
+library(KidsightsPublic)
+
+# Example: data with equate-lexicon column names
+head(my_data)
+#>   child_id site years_old AA4 AA5 AA6 AA7 ...
+#>   1001     ne25  1.2       0   0  NA   0  ...
+#>   1002     ne25  3.5       1   1   1   1  ...
+```
+
+## Scoring Kidsights (overall developmental score)
+
+```{r}
+results <- score_kidsights(my_data, id_cols = c("child_id", "site"))
+head(results)
+#>   child_id site  theta
+#>   1001     ne25  -2.31
+#>   1002     ne25   3.45
+```
+
+The `theta` column contains the MAP estimate of the latent trait. Higher values
+indicate more advanced development. Observations with fewer than 5 non-missing
+item responses receive `NA`.
+
+## Scoring psychosocial domains
+
+```{r}
+ps_results <- score_psychosocial(my_data, id_cols = c("child_id", "site"))
+head(ps_results)
+#>   child_id site theta_gen theta_eat theta_ext theta_int theta_sle theta_soc
+#>   1001     ne25  0.12     -0.45      0.33     -0.21      0.55     -0.10
+#>   1002     ne25  1.05      0.22      0.87      0.15      0.33      0.68
+```
+
+The psychosocial model produces six scores:
+
+| Column | Domain |
+|--------|--------|
+| `theta_gen` | General psychosocial factor |
+| `theta_eat` | Eating problems |
+| `theta_ext` | Externalizing behavior |
+| `theta_int` | Internalizing behavior |
+| `theta_sle` | Sleep problems |
+| `theta_soc` | Social competency |
+
+## Lexicon auto-detection
+
+The package automatically detects which lexicon your column names follow. You
+can check this manually:
+
+```{r}
+lex <- detect_lexicon(my_data)
+lex$lexicon
+#> [1] "ne25"
+lex$n_matched
+#> [1] 185
+```
+
+Supported lexicons: equate, kidsight, ne25, ne22, ne20, credi, gsed, mn26,
+cahmi21, cahmi22, ecdi.
+
+## Notes
+
+- **Age**: must be in raw years. The model computes `ln(age + 1)` internally.
+- **Missing data**: handled via full-information maximum likelihood (FIML).
+  Missing item responses are skipped in the likelihood. Observations with
+  fewer than 5 responses (configurable via `min_responses`) are not scored.
+- **Out-of-range responses**: values outside `[0, K-1]` for an item are set to
+  `NA` with a warning.
+- **Speed**: optimization typically takes 2-15 seconds depending on sample size
+  and model.

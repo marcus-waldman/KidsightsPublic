@@ -1,2 +1,7 @@
 ^KidsightsPublic\.Rproj$
 ^\.Rproj\.user$
+^data-raw$
+^todo$
+^CLAUDE\.md$
+^\.claude$
+^LICENSE\.md$
